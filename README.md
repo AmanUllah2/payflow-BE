@@ -82,6 +82,7 @@ Check everything is up with `curl http://localhost:3000/health`.
 
 | Variable | Description | Example |
 | --- | --- | --- |
+| `NODE_ENV` | `development`, `test` or `production` | `development` |
 | `PORT` | API port | `3000` |
 | `DATABASE_URL` | Postgres connection string | `postgres://payflow:payflow@localhost:5432/payflow` |
 | `DB_POOL_SIZE` | Max Postgres connections per process | `10` |
@@ -127,6 +128,7 @@ payflow/
 │   ├── loop-order.js          # event loop experiments
 │   ├── fake-merchant.ts
 │   └── race-test.ts           # concurrency acceptance test
+├── postman/                   # Postman collection + local environment (import both)
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -148,7 +150,8 @@ payflow/
 | `GET` | `/merchants/:id/webhooks` | Webhook delivery attempts and status |
 | `GET` | `/admin/reports/daily-volume` | Daily transaction volume |
 | `GET` | `/admin/reports/top-merchants` | Merchants ranked by volume |
-| `GET` | `/health` | Liveness check |
+| `GET` | `/health` | Liveness: process is up (no dependency checks) |
+| `GET` | `/health/ready` | Readiness: dependencies reachable; 503 while down or shutting down |
 
 ### Example transfer
 
@@ -201,6 +204,7 @@ Where each callback in the current code runs. Node's loop goes through these pha
 npm test                    # unit and integration tests
 npm run test:race           # 100 concurrent transfers against one wallet
 npm run loadtest            # autocannon against /transfers
+npm run test:api            # Postman collection via newman (server must be running)
 ```
 
 The project is considered complete when these acceptance tests pass:

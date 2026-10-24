@@ -2,6 +2,7 @@ import { config } from './config';
 import { createApp } from './app';
 import { startEventLoopMonitor } from './lib/eventLoopMonitor';
 import { logger } from './lib/logger';
+import { markShuttingDown } from './modules/health/readiness';
 
 const app = createApp();
 const stopEventLoopMonitor = startEventLoopMonitor();
@@ -12,6 +13,7 @@ const server = app.listen(config.port, () => {
 
 function shutdown(signal: string) {
   logger.info({ signal }, 'Shutdown signal received, closing server');
+  markShuttingDown();
   stopEventLoopMonitor();
   server.close((err) => {
     if (err) {
