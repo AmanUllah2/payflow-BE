@@ -176,6 +176,25 @@ Amounts are stored as integers in minor units (cents) to avoid floating-point er
 
 **Non-blocking risk scoring.** Scoring runs in a piscina worker pool, keeping event-loop lag low under load.
 
+## Event loop notes
+
+Where each callback in the current code runs. Node's loop goes through these phases in order: **timers → pending callbacks → poll → check → close callbacks**. After every callback, Node runs the `process.nextTick` queue and then the promise microtask queue, before moving on to the next callback or phase.
+
+| Callback | Where it runs | Why |
+| --- | --- | --- |
+| Top-level code in `server.ts` (config parsing, `createApp()`, `startEventLoopMonitor()`, `app.listen()`) | Before the loop starts | The main module runs synchronously to completion before libuv starts turning the loop. |
+| `app.listen(...)` callback | `nextTick` queue, before the first loop iteration | Binding the port is synchronous, but `net.Server` emits `'listening'` with `process.nextTick`. The callback therefore runs right after the main script finishes, before any timer or I/O. |
+| Route handlers (`/health`, 404) and pino-http's `genReqId` | Poll phase | An incoming request is socket I/O. libuv reports readable data in the poll phase, the HTTP parser runs on it, and Express calls the middleware chain synchronously inside that callback. |
+| Error handler | Poll phase, or the microtask queue | A synchronous `throw` is caught in the same poll-phase call. For an `async` handler that rejects, Express 5 calls `next(err)` from a promise reaction, so the error handler runs in the microtask queue right after it. |
+| pino-http's `customLogLevel` (request-completed log) | `nextTick` queue, after the handler | It runs on the response's `'finish'` event. A small response is usually written to the socket synchronously, and Node defers the write-completion callback (and so `'finish'`) with `process.nextTick`. It runs in the same poll-phase turn, just after the handler returns. A large or backpressured response finishes in a later poll phase instead. |
+| Event-loop monitor `setInterval` callback | Timers phase | `setInterval` callbacks always run in the timers phase once their delay has elapsed. They can run later than 10 s if earlier phases are busy, but never earlier. |
+| `monitorEventLoopDelay` sampling | No JS callback | The histogram is fed by a native libuv timer, so sampling adds no JavaScript work. |
+| `SIGINT` / `SIGTERM` handlers (`shutdown`) | Poll phase | libuv turns a signal into a write on an internal pipe, which is read during the poll phase like any other I/O. |
+| `server.close(...)` callback | `nextTick` queue, or close-callbacks phase | It runs on the server's `'close'` event, which waits until every connection has closed. With no open connections, `'close'` is emitted with `process.nextTick` right after the signal handler. With keep-alive sockets still open, it fires after the last socket's handle closes, which happens in the close-callbacks phase. |
+| Shutdown fallback `setTimeout` (10 s) | Timers phase | Same as any timer. It is `unref`'d, so it only fires if something else is still keeping the process alive. |
+| `unhandledRejection` handler | After the microtask queue drains, in whatever phase the rejection happened | Node checks for unhandled rejections when it finishes processing the tick and microtask queues, so this handler has no phase of its own. |
+| Pino log writes in development (`pino-pretty`) | Off the main loop | The transport runs in a worker thread. The main thread only copies the log line into a shared buffer, so formatting doesn't add event-loop lag. |
+
 ## Testing
 
 ```bash

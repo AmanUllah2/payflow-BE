@@ -1,8 +1,10 @@
 import { config } from './config';
 import { createApp } from './app';
+import { startEventLoopMonitor } from './lib/eventLoopMonitor';
 import { logger } from './lib/logger';
 
 const app = createApp();
+const stopEventLoopMonitor = startEventLoopMonitor();
 
 const server = app.listen(config.port, () => {
   logger.info({ port: config.port, env: config.env }, `API listening on http://localhost:${config.port}`);
@@ -10,6 +12,7 @@ const server = app.listen(config.port, () => {
 
 function shutdown(signal: string) {
   logger.info({ signal }, 'Shutdown signal received, closing server');
+  stopEventLoopMonitor();
   server.close((err) => {
     if (err) {
       logger.error({ err }, 'Error while closing server');
